@@ -13,7 +13,6 @@ struct pass_args { //struct for the parameters pass to thread function
   //socklen_t ne_addrlen = sizeof(ne_addr);
   struct sockaddr_in router_addr;
   //socklen_t router_addrlen = sizeof(router_addr);
-  struct pkt_RT_UPDATE update;
 }pass_args;
 
 void * receive_from(void *);
@@ -131,7 +130,7 @@ int main(int argc, char **argv) {
   InitRoutingTbl(&respon, router_id);
   printf("\ninit successful\n");
   PrintRoutes(rlog, router_id);
-  fflush(rlog);
+  //fflush(rlog);
   //finish initial routing table
   
   pthread_t receive;
@@ -145,6 +144,7 @@ int main(int argc, char **argv) {
   arguments.router_id = router_id;
   total_nbrs = respon.no_nbr;
   arguments.fp = rlog;
+  printf("respon:%d\n",respon.no_nbr);
   //hton_pkt_RT_UPDATE(&arguments.update);
   //transfer info into nbrs
   for (i = 0; i < respon.no_nbr; i++){
@@ -153,12 +153,12 @@ int main(int argc, char **argv) {
     nbrs[i].cost = respon.nbrcost[i].cost;
   }
   //creating thread
-  if (pthread_create(&receive, NULL, receive_from,(void *)&arguments)) {
-    perror("Error creating thread for receivinh update");
-    return EXIT_FAILURE;
-  }
   if (pthread_create(&send, NULL, send_to,(void *)&arguments)) {
     perror("Error creating thread for sending update");
+    return EXIT_FAILURE;
+  }
+  if (pthread_create(&receive, NULL, receive_from,(void *)&arguments)) {
+    perror("Error creating thread for receivinh update");
     return EXIT_FAILURE;
   }
   pthread_join(receive,NULL);
@@ -178,7 +178,8 @@ void * receive_from(void *args){
       printf("Packet receive failed\n");
       return EXIT_FAILURE;
     }
-    printf("received: %d\n",update_pkt.no_routes);
+    ntoh_pkt_RT_UPDATE(&update_pkt);
+    printf("received path len: %d\n",update_pkt.route[0].path_len);
     pthread_mutex_lock(&lock);
     for (i = 0; i < total_nbrs; i++){
       if (update_pkt.sender_id ==nbrs[i].ID){
@@ -186,8 +187,7 @@ void * receive_from(void *args){
 	break;
       }
     }
-    printf("haha\n");
-    printf("%d\n",arg -> router_id);
+    printf("%d i:%d\n",arg -> router_id,i);
     update = UpdateRoutes(&update_pkt,nbrs[i].cost,arg -> router_id);
     if (update){
       PrintRoutes(rlog, arg -> router_id);
@@ -211,8 +211,8 @@ void * send_to(void *args){
   while (1){
     pthread_mutex_lock(&lock);
     if((time(NULL) - update_time) >= UPDATE_INTERVAL){
-      for(i=0;i < total_nbrs;i++){
-	bzero(&update_pkt,sizeof(update_pkt));    
+      for(i = 0; i < total_nbrs; i++){
+	bzero(&update_pkt, sizeof(update_pkt));    
 	ConvertTabletoPkt(&update_pkt, arg -> router_id);
 	update_pkt.dest_id = nbrs[i].ID;
 	hton_pkt_RT_UPDATE(&update_pkt);
