@@ -41,30 +41,44 @@ int UpdateRoutes(struct pkt_RT_UPDATE *RecvdUpdatePacket, int costToNbr, int myI
   bool found_entry = 0;
   bool changed = 0;
   int i, j, k;
+  int found_path = 0;
   for (i = 0; i < RecvdUpdatePacket->no_routes; i++){
     found_entry = 0;
     update_entry = RecvdUpdatePacket->route[i];
     int new_cost = costToNbr + update_entry.cost;
+    if (new_cost > INFINITY) {new_cost = INFINITY;}
     for (j = 0; j < NumRoutes; j++){
       cur_entry = routingTable[j];
       //found the entry
       if (routingTable[j].dest_id == update_entry.dest_id){
 	found_entry = 1;
-	if (new_cost < routingTable[j].cost && update_entry.next_hop != myID){ //force update prevent loop and find better path
+	found_path = 0;
+	for (k = 0; k < update_entry.path_len;k++){//path vector
+	  if (myID == update_entry.path[k]){
+	    found_path = 1;
+	  }
+	}
+	if (found_path == 0 && RecvdUpdatePacket->sender_id == routingTable[j].next_hop){//force update
+	  if (routingTable[j].cost != new_cost) {changed = 1;}
+	  routingTable[j].path[0] = myID;
+	  routingTable[j].cost = new_cost;
+	  for (k = 0; k < routingTable[j].path_len; k++){
+	    routingTable[j].path[k + 1] = update_entry.path[k];
+	  }
+	  routingTable[j].path_len = update_entry.path_len + 1;
+	}
+	if (found_path == 0 && new_cost < routingTable[j].cost && update_entry.next_hop != myID){ //split horizon
+	  routingTable[j].path[0] = myID;
 	  for (k = 0; k < routingTable[j].path_len; k++){
 	    routingTable[j].path[k + 1] = update_entry.path[k];
 	  }
 	  routingTable[j].next_hop = RecvdUpdatePacket->sender_id;
 	  routingTable[j].cost = new_cost;
-	  routingTable[j].path_len = update_entry.path_len;
+	  routingTable[j].path_len = update_entry.path_len + 1;
 	  changed = 1;
-	}
-	else if (RecvdUpdatePacket->sender_id == routingTable[j].next_hop){//force update
-	  routingTable[j].cost = new_cost;
-	  changed = 1;
-	}
-	//break;
-	j = NumRoutes;
+	}	
+	break;
+	//j = NumRoutes;
       }
     }
     //in case entry is not found
@@ -73,7 +87,7 @@ int UpdateRoutes(struct pkt_RT_UPDATE *RecvdUpdatePacket, int costToNbr, int myI
       routingTable[j].cost = new_cost;
       routingTable[j].dest_id = update_entry.dest_id;
       routingTable[j].path_len = update_entry.path_len + 1;
-      printf("\n%ld %d\n",sizeof(routingTable[j].path)/4,update_entry.path_len);
+      routingTable[j].path[0] = myID;
       for (k = 0; k < update_entry.path_len; k++){
         routingTable[j].path[k + 1] = update_entry.path[k];
       }

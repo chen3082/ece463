@@ -22,14 +22,15 @@ struct nbr_temp {
   int ID;
   int cost;
   long last_update;
+  int dead;
 } nbr_temp;
 
 struct nbr_temp nbrs[MAX_ROUTERS];
 //init time variables
 int total_nbrs;
-long update_time;
-long converge_time;
-int converged;
+unsigned int update_time = 0;
+unsigned int converge_time;
+int converged = 0;
 FILE * rlog;
 
 //to keep track of neighbors for updating
@@ -115,6 +116,7 @@ int main(int argc, char **argv) {
     printf("udp bind Socket fails\n");
     return -1;
   }
+  converge_time = time(NULL);
   //send and receive initial request
   if (sendto(udp_listenfd, &req, sizeof(req),0,(struct sockaddr *)&ne_addr,ne_addrlen) < 0){
     printf("Packet sent failed\n");
@@ -151,6 +153,7 @@ int main(int argc, char **argv) {
     nbrs[i].last_update = time(NULL);
     nbrs[i].ID = respon.nbrcost[i].nbr;
     nbrs[i].cost = respon.nbrcost[i].cost;
+    nbrs[i].dead = 0;
   }
   //creating thread
   if (pthread_create(&send, NULL, send_to,(void *)&arguments)) {
@@ -182,8 +185,9 @@ void * receive_from(void *args){
     printf("received path len: %d\n",update_pkt.route[0].path_len);
     pthread_mutex_lock(&lock);
     for (i = 0; i < total_nbrs; i++){
-      if (update_pkt.sender_id ==nbrs[i].ID){
+      if (update_pkt.sender_id == nbrs[i].ID){
 	nbrs[i].last_update = time(NULL);
+	nbrs[i].dead = 0;
 	break;
       }
     }
@@ -191,11 +195,12 @@ void * receive_from(void *args){
     update = UpdateRoutes(&update_pkt,nbrs[i].cost,arg -> router_id);
     if (update){
       PrintRoutes(rlog, arg -> router_id);
-      printf("%d\n",arg -> router_id);
       fflush(rlog);
       converged = 0;
       converge_time = time(NULL);
+      printf("%d: first converge_time\n",converge_time);
     }
+
     pthread_mutex_unlock(&lock);
   }
   return NULL;
@@ -223,16 +228,25 @@ void * send_to(void *args){
 	update_time = time(NULL);
       }
     }//for else and big if
-    pthread_mutex_unlock(&lock);
-    pthread_mutex_lock(&lock);
-    for (i = 0; i <total_nbrs; i++){
-      if((time(NULL) - nbrs[i].last_update)> FAILURE_DETECTION){
-	//the router A marks the link to be as inactive
-	UninstallRoutesOnNbrDeath(nbrs[i].ID);
+    for (i = 0; i < total_nbrs; i++){
+      if((time(NULL) - nbrs[i].last_update) > FAILURE_DETECTION){
+	//the router A marks the link to B as inactive
+	if (nbrs[i].dead == 0){
+		UninstallRoutesOnNbrDeath(nbrs[i].ID);
+        	PrintRoutes(rlog, arg -> router_id);
+		converge_time = time(NULL);
+	}
+	nbrs[i].dead = 1;//if router is dead, do not print anymore
       }// FOR FAILURE_dETECTION
     }// for for loop
-    if ((time(NULL) - converge_time) > CONVERGE_TIMEOUT){
-      // what to do
+    if ((time(NULL) - converge_time) >= CONVERGE_TIMEOUT){
+      if (converged == 0){
+	printf("Converged\n");
+	fprintf(rlog,"%d:Converged\n",(int)time(NULL) - (int)converge_time);
+	fflush(rlog);
+	converge_time = time(NULL);
+	converged = 1; // if converge, never use it again.
+      }
     }   // for if
     pthread_mutex_unlock(&lock);
   }// for while(1)
