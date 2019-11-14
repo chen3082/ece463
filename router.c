@@ -30,6 +30,7 @@ struct nbr_temp nbrs[MAX_ROUTERS];
 int total_nbrs;
 unsigned int update_time = 0;
 unsigned int converge_time;
+unsigned int start_time;
 int converged = 0;
 FILE * rlog;
 
@@ -116,7 +117,6 @@ int main(int argc, char **argv) {
     printf("udp bind Socket fails\n");
     return -1;
   }
-  converge_time = time(NULL);
   //send and receive initial request
   if (sendto(udp_listenfd, &req, sizeof(req),0,(struct sockaddr *)&ne_addr,ne_addrlen) < 0){
     printf("Packet sent failed\n");
@@ -134,7 +134,7 @@ int main(int argc, char **argv) {
   PrintRoutes(rlog, router_id);
   //fflush(rlog);
   //finish initial routing table
-  
+  start_time = time(NULL);
   pthread_t receive;
   pthread_t send;
   struct pass_args arguments;
@@ -146,7 +146,6 @@ int main(int argc, char **argv) {
   arguments.router_id = router_id;
   total_nbrs = respon.no_nbr;
   arguments.fp = rlog;
-  printf("respon:%d\n",respon.no_nbr);
   //hton_pkt_RT_UPDATE(&arguments.update);
   //transfer info into nbrs
   for (i = 0; i < respon.no_nbr; i++){
@@ -155,6 +154,7 @@ int main(int argc, char **argv) {
     nbrs[i].cost = respon.nbrcost[i].cost;
     nbrs[i].dead = 0;
   }
+  converge_time = time(NULL);
   //creating thread
   if (pthread_create(&send, NULL, send_to,(void *)&arguments)) {
     perror("Error creating thread for sending update");
@@ -175,14 +175,13 @@ void * receive_from(void *args){
   int i;
   struct pass_args * arg = args;
   struct pkt_RT_UPDATE update_pkt;
-  socklen_t ne_addrlen_temp = sizeof(arg -> router_addr);
+  //socklen_t ne_addrlen_temp = (socklen_t)sizeof(arg -> router_addr);
   while (1) {
     if (recvfrom(arg -> udp_fd, &update_pkt, sizeof(update_pkt),0,NULL,NULL) < 0){
       printf("Packet receive failed\n");
-      return EXIT_FAILURE;
+      //return EXIT_FAILURE;
     }
     ntoh_pkt_RT_UPDATE(&update_pkt);
-    printf("received path len: %d\n",update_pkt.route[0].path_len);
     pthread_mutex_lock(&lock);
     for (i = 0; i < total_nbrs; i++){
       if (update_pkt.sender_id == nbrs[i].ID){
@@ -191,14 +190,12 @@ void * receive_from(void *args){
 	break;
       }
     }
-    printf("%d i:%d\n",arg -> router_id,i);
     update = UpdateRoutes(&update_pkt,nbrs[i].cost,arg -> router_id);
     if (update){
       PrintRoutes(rlog, arg -> router_id);
       fflush(rlog);
       converged = 0;
       converge_time = time(NULL);
-      printf("%d: first converge_time\n",converge_time);
     }
 
     pthread_mutex_unlock(&lock);
@@ -223,7 +220,7 @@ void * send_to(void *args){
 	hton_pkt_RT_UPDATE(&update_pkt);
 	if (sendto(arg -> udp_fd, &update_pkt, sizeof(update_pkt),0,(struct sockaddr *)&(arg -> ne_addr),ne_addrlen_temp) < 0){
 	  printf("Packet send failed\n");
-	  return EXIT_FAILURE;
+	  //return EXIT_FAILURE;
 	}// for small if
 	update_time = time(NULL);
       }
@@ -233,6 +230,7 @@ void * send_to(void *args){
 	//the router A marks the link to B as inactive
 	if (nbrs[i].dead == 0){
 		UninstallRoutesOnNbrDeath(nbrs[i].ID);
+		converged = 0;
         	PrintRoutes(rlog, arg -> router_id);
 		converge_time = time(NULL);
 	}
@@ -242,7 +240,7 @@ void * send_to(void *args){
     if ((time(NULL) - converge_time) >= CONVERGE_TIMEOUT){
       if (converged == 0){
 	printf("Converged\n");
-	fprintf(rlog,"%d:Converged\n",(int)time(NULL) - (int)converge_time);
+	fprintf(rlog,"%d:Converged\n",(int)time(NULL) - (int)start_time);
 	fflush(rlog);
 	converge_time = time(NULL);
 	converged = 1; // if converge, never use it again.
