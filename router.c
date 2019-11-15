@@ -233,8 +233,8 @@ void * send_to(void *args){
 		converged = 0;
         	PrintRoutes(rlog, arg -> router_id);
 		converge_time = time(NULL);
-	}
-	nbrs[i].dead = 1;//if router is dead, do not print anymore
+		nbrs[i].dead = 1;//if router is dead, do not print anymore
+	}	
       }// FOR FAILURE_dETECTION
     }// for for loop
     if ((time(NULL) - converge_time) >= CONVERGE_TIMEOUT){

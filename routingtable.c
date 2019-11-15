@@ -58,37 +58,53 @@ int UpdateRoutes(struct pkt_RT_UPDATE *RecvdUpdatePacket, int costToNbr, int myI
 	    found_path = 1;
 	  }
 	}
-	if (found_path == 0 && RecvdUpdatePacket->sender_id == routingTable[j].next_hop){//force update
-	  if (update_entry.path_len==MAX_PATH_LEN) {routingTable[j].cost = INFINITY;}
+	if ((found_path == 0 || new_cost == INFINITY) && (RecvdUpdatePacket->sender_id == routingTable[j].next_hop)){//force update
+	  /*if (update_entry.path_len==MAX_PATH_LEN) {routingTable[j].cost = INFINITY;}
           
 	  else{
-	  if (routingTable[j].cost != new_cost) {changed = 1;}
-          
-	  routingTable[j].path[0] = myID;
-	  routingTable[j].cost = new_cost;
-	  for (k = 0; k < routingTable[j].path_len; k++){
-	    routingTable[j].path[k + 1] = update_entry.path[k];
+	    if (routingTable[j].cost != new_cost) {changed = 1;}
+	    
+	    routingTable[j].path[0] = myID;
+	    routingTable[j].cost = new_cost;
+	    for (k = 0; k < routingTable[j].path_len; k++){
+	      routingTable[j].path[k + 1] = update_entry.path[k];
+	    }
+	    
+	    routingTable[j].path_len = update_entry.path_len + 1;
+	    }*/
+	  int path_same = 1;
+	  for (k = 1; k < routingTable[j].path_len; k++){
+	    if (routingTable[j].path[k] != RecvdUpdatePacket->route[i].path[k-1]){
+	      path_same = 0;
+	    }
 	  }
-                  
-	  routingTable[j].path_len = update_entry.path_len + 1;
-	}
-        }// for force update
-	
-	if (found_path == 0 && new_cost < routingTable[j].cost && update_entry.next_hop != myID){ //split horizon
-          if (update_entry.path_len==MAX_PATH_LEN) {routingTable[j].cost = INFINITY;}
+	  if (routingTable[j].cost != new_cost || (new_cost != INFINITY && path_same == 0)){
+	    if (update_entry.path_len>=MAX_PATH_LEN) {routingTable[j].cost = INFINITY;}
+	    else{
+	      routingTable[j].path[0] = myID;
+	      routingTable[j].cost = new_cost;
+	      for (k = 0; k < routingTable[j].path_len; k++){
+		routingTable[j].path[k + 1] = update_entry.path[k];
+	      }
+	      
+	      routingTable[j].path_len = update_entry.path_len + 1;
+	      }
+	    changed = 1;
+	  }
+        }// for force update	
+	if (found_path == 0 && new_cost < routingTable[j].cost && (update_entry.next_hop != myID)){ //split horizon
+          if (update_entry.path_len>=MAX_PATH_LEN) {routingTable[j].cost = INFINITY;}
           else{
-	  routingTable[j].path[0] = myID;
-	  for (k = 0; k < routingTable[j].path_len; k++){
-	    routingTable[j].path[k + 1] = update_entry.path[k];
+	    routingTable[j].path[0] = myID;
+	    for (k = 0; k < routingTable[j].path_len; k++){
+	      routingTable[j].path[k + 1] = update_entry.path[k];
+	    }
+	    routingTable[j].next_hop = RecvdUpdatePacket->sender_id;
+	    routingTable[j].cost = new_cost;
+	    routingTable[j].path_len = update_entry.path_len + 1;
 	  }
-	  routingTable[j].next_hop = RecvdUpdatePacket->sender_id;
-	  routingTable[j].cost = new_cost;
-	  routingTable[j].path_len = update_entry.path_len + 1;
 	  changed = 1;
-         }
 	}	
-	break;
-	//j = NumRoutes;
       }
     }
     //in case entry is not found
